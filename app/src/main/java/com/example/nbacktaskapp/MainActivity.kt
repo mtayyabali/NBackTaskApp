@@ -13,7 +13,9 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.example.nbacktaskapp.ui.theme.NBackTaskAppTheme
@@ -29,43 +31,75 @@ class MainActivity : ComponentActivity(), SensorEventListener {
     private val accelerometerData = StringBuilder()
     private val random = Random
     private var nBackNumber = 0
-    private val sequenceLength = 20 // Number of trials in the n-back task
+    private val sequenceLength = 30
+    private lateinit var nBackSequence: List<Int>
+    private var currentIndex = 0
+    private var matchCount = 0
+    private var currentTaskIndex = 0
+    private lateinit var taskLevels: MutableList<Int>
+    private val reactionTimeData = StringBuilder()
+    private var numberDisplayedTime: Long = 0
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
         accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
 
+        // Initialize and shuffle task levels
+        taskLevels = mutableListOf(1, 2, 3)
+        taskLevels.shuffle()
+
         setContent {
             NBackTaskAppTheme {
-                NBackTaskScreen(
-                    onStartTask = { startNBackTask() },
-                    onEndTask = { endNBackTask() }
-                )
+                MainScreen(onStartTask = { startNBackTask() })
             }
         }
     }
 
     private fun startNBackTask() {
-        nBackNumber = random.nextInt(10) // Random number for n-back task
+        nBackNumber = taskLevels[currentTaskIndex]
         sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_NORMAL)
-        // Simulate the n-back task sequence (for simplicity, just a delay)
-        Thread {
-            try {
-                Thread.sleep(5000) // Wait for 5 seconds (simulate task duration)
-                runOnUiThread {
-                    endNBackTask()
-                }
-            } catch (e: InterruptedException) {
-                e.printStackTrace()
-            }
-        }.start()
+        generateNBackSequence()
+        matchCount = 0
+        currentIndex = 0
+        displayNextNumber()
+    }
+
+    private fun nextNBackTask() {
+        currentTaskIndex = (currentTaskIndex + 1) % taskLevels.size
+        startNBackTask()
+    }
+
+    private fun handleMatchPress() {
+        val reactionTime = System.currentTimeMillis() - numberDisplayedTime
+        reactionTimeData.append("Reaction Time: $reactionTime ms\n")
+
+        if (currentIndex >= nBackNumber && nBackSequence[currentIndex] == nBackSequence[currentIndex - nBackNumber]) {
+            matchCount++
+        }
     }
 
     private fun endNBackTask() {
         sensorManager.unregisterListener(this)
-        // Save accelerometer data to storage
         saveAccelerometerData()
+        saveReactionTimeData()  // Save reaction time data
+        val accuracy = (matchCount.toDouble() / sequenceLength) * 100
+
+        setContent {
+            NBackTaskAppTheme {
+                NBackTaskScreen(
+                    onStartTask = { startNBackTask() },
+                    onNextTask = { nextNBackTask() },
+                    onMatchPress = { handleMatchPress() },
+                    currentNumber = null,
+                    isTaskRunning = false,
+                    showNumber = false,
+                    showAccuracy = true,
+                    accuracy = accuracy,
+                    currentTask = taskLevels[currentTaskIndex]
+                )
+            }
+        }
     }
 
     private fun saveAccelerometerData() {
@@ -80,6 +114,107 @@ class MainActivity : ComponentActivity(), SensorEventListener {
         } catch (e: IOException) {
             e.printStackTrace()
         }
+    }
+
+    private fun saveReactionTimeData() {
+        val fileName = "reaction_time_data.txt"
+        val file = File(getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS), fileName)
+
+        try {
+            FileWriter(file).use { writer ->
+                writer.append(reactionTimeData.toString())
+                Log.d("NBackTaskApp", "Reaction time data saved to ${file.absolutePath}")
+            }
+        } catch (e: IOException) {
+            e.printStackTrace()
+        }
+    }
+    private fun generateNBackSequence() {
+        val targetNumbers = mutableListOf<Int>()
+        var matchCount = 0
+        val requiredMatches = 15  // Ensure 15 matches for each n-back task
+
+        while (matchCount < requiredMatches) {
+            // Generate 4 to 7 random numbers before each match
+            val randomCount = random.nextInt(4, 8)
+            for (i in 1..randomCount) {
+                targetNumbers.add(random.nextInt(10))
+            }
+
+            // Ensure the list is long enough to insert a match
+            if (targetNumbers.size >= nBackNumber) {
+                // Add a match by repeating a number from nBackNumber positions earlier
+                targetNumbers.add(targetNumbers[targetNumbers.size - nBackNumber])
+                matchCount++
+            }
+        }
+
+        // After all matches are added, add a final set of random numbers
+        val finalRandomCount = random.nextInt(4, 8)
+        for (i in 1..finalRandomCount) {
+            targetNumbers.add(random.nextInt(10))
+        }
+
+        nBackSequence = targetNumbers
+        Log.d("NBackTaskApp", "Generated n-back sequence: $nBackSequence")
+    }
+
+    private fun displayNextNumber() {
+        if (currentIndex >= nBackSequence.size) {
+            endNBackTask()
+            return
+        }
+
+        numberDisplayedTime = System.currentTimeMillis()  // Set the display time
+
+        runOnUiThread {
+            setContent {
+                NBackTaskAppTheme {
+                    NBackTaskScreen(
+                        onStartTask = { startNBackTask() },
+                        onNextTask = { nextNBackTask() },
+                        onMatchPress = { handleMatchPress() },
+                        currentNumber = nBackSequence[currentIndex],
+                        isTaskRunning = true,
+                        showNumber = true,
+                        showAccuracy = false,
+                        accuracy = 0.0,
+                        currentTask = taskLevels[currentTaskIndex]
+                    )
+                }
+            }
+        }
+
+
+
+
+        Thread {
+            try {
+                Thread.sleep(1000L)
+                runOnUiThread {
+                    setContent {
+                        NBackTaskAppTheme {
+                            NBackTaskScreen(
+                                onStartTask = { startNBackTask() },
+                                onNextTask = { nextNBackTask() },
+                                onMatchPress = { handleMatchPress() },
+                                currentNumber = null,
+                                isTaskRunning = true,
+                                showNumber = false,
+                                showAccuracy = false,
+                                accuracy = 0.0,
+                                currentTask = taskLevels[currentTaskIndex]
+                            )
+                        }
+                    }
+                }
+                Thread.sleep(2000L)
+                currentIndex++
+                displayNextNumber()
+            } catch (e: InterruptedException) {
+                e.printStackTrace()
+            }
+        }.start()
     }
 
     override fun onSensorChanged(event: SensorEvent?) {
@@ -97,51 +232,95 @@ class MainActivity : ComponentActivity(), SensorEventListener {
 }
 
 @Composable
-fun NBackTaskScreen(onStartTask: () -> Unit, onEndTask: () -> Unit) {
-    var isTaskRunning by remember { mutableStateOf(false) }
-    var response by remember { mutableStateOf("") }
-    var instructions by remember { mutableStateOf("Press Start to begin the n-back task") }
-
+fun MainScreen(onStartTask: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxSize()
             .padding(16.dp),
-        verticalArrangement = Arrangement.Center
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text(
-            text = instructions,
+            text = "Press Start to begin the n-back task",
             style = MaterialTheme.typography.headlineMedium,
+            textAlign = TextAlign.Center,
             modifier = Modifier.padding(bottom = 16.dp)
         )
-        if (isTaskRunning) {
-            TextField(
-                value = response,
-                onValueChange = { response = it },
-                label = { Text("Your response") },
-                modifier = Modifier.fillMaxWidth()
+        Button(
+            onClick = onStartTask,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("Start")
+        }
+    }
+}
+
+@Composable
+fun NBackTaskScreen(
+    onStartTask: () -> Unit,
+    onNextTask: () -> Unit,
+    onMatchPress: () -> Unit,
+    currentNumber: Int?,
+    isTaskRunning: Boolean,
+    showNumber: Boolean,
+    showAccuracy: Boolean,
+    accuracy: Double,
+    currentTask: Int
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            text = "$currentTask-back task",
+            style = MaterialTheme.typography.headlineMedium,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(bottom = 16.dp)
+        )
+
+        if (showAccuracy) {
+            Text(
+                text = "Task completed. Your accuracy: ${"%.2f".format(accuracy)}%",
+                style = MaterialTheme.typography.headlineMedium,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(bottom = 16.dp)
             )
             Button(
-                onClick = {
-                    onEndTask()
-                    isTaskRunning = false
-                    instructions = "Task completed. Your response: $response"
-                },
+                onClick = onNextTask,
                 modifier = Modifier.padding(top = 16.dp)
             ) {
-                Text("End")
+                Text("Next")
             }
         } else {
-            Button(
-                onClick = {
-                    onStartTask()
-                    isTaskRunning = true
-                    instructions = "Remember this number: ${Random.nextInt(10)}"
-                },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Start")
+            if (isTaskRunning) {
+                if (showNumber && currentNumber != null) {
+                    Text(
+                        text = currentNumber.toString(),
+                        style = MaterialTheme.typography.headlineLarge,
+                        modifier = Modifier.padding(bottom = 16.dp)
+                    )
+                } else {
+                    Spacer(modifier = Modifier.height(72.dp)) // Placeholder for the number
+                }
+                Button(
+                    onClick = onMatchPress,
+                    modifier = Modifier.padding(top = 16.dp)
+                ) {
+                    Text("Match")
+                }
             }
         }
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+fun MainScreenPreview() {
+    NBackTaskAppTheme {
+        MainScreen(onStartTask = {})
     }
 }
 
@@ -151,7 +330,14 @@ fun NBackTaskScreenPreview() {
     NBackTaskAppTheme {
         NBackTaskScreen(
             onStartTask = {},
-            onEndTask = {}
+            onNextTask = {},
+            onMatchPress = {},
+            currentNumber = 5,
+            isTaskRunning = true,
+            showNumber = true,
+            showAccuracy = false,
+            accuracy = 0.0,
+            currentTask = 1
         )
     }
 }
