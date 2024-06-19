@@ -23,6 +23,10 @@ import java.io.File
 import java.io.FileWriter
 import java.io.IOException
 import kotlin.random.Random
+import android.content.ContentValues
+import android.provider.MediaStore
+import android.widget.Toast
+
 
 class MainActivity : ComponentActivity(), SensorEventListener {
 
@@ -66,8 +70,15 @@ class MainActivity : ComponentActivity(), SensorEventListener {
     }
 
     private fun nextNBackTask() {
-        currentTaskIndex = (currentTaskIndex + 1) % taskLevels.size
-        startNBackTask()
+        setContent {
+            NBackTaskAppTheme {
+                RatingScreen(onSubmitRating = { rating ->
+                    saveRating(applicationContext, rating)
+                    currentTaskIndex = (currentTaskIndex + 1) % taskLevels.size
+                    startNBackTask()
+                })
+            }
+        }
     }
 
     private fun handleMatchPress() {
@@ -82,8 +93,14 @@ class MainActivity : ComponentActivity(), SensorEventListener {
     private fun endNBackTask() {
         sensorManager.unregisterListener(this)
         saveAccelerometerData()
-        saveReactionTimeData()  // Save reaction time data
-        val accuracy = (matchCount.toDouble() / sequenceLength) * 100
+        saveReactionTimeData(this)
+        val accuracy = if (sequenceLength > 0) {
+            val calculatedAccuracy = (matchCount.toDouble() / sequenceLength) * 100
+            if (calculatedAccuracy > 100.0) 100.0 else calculatedAccuracy
+        } else {
+            0.0
+        }
+        saveAccuracyData(this, accuracy)
 
         setContent {
             NBackTaskAppTheme {
@@ -102,6 +119,7 @@ class MainActivity : ComponentActivity(), SensorEventListener {
         }
     }
 
+
     private fun saveAccelerometerData() {
         val fileName = "accelerometer_data.txt"
         val file = File(getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS), fileName)
@@ -116,19 +134,105 @@ class MainActivity : ComponentActivity(), SensorEventListener {
         }
     }
 
-    private fun saveReactionTimeData() {
+    private fun saveReactionTimeData(context: Context) {
         val fileName = "reaction_time_data.txt"
-        val file = File(getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS), fileName)
+        val contentValues = ContentValues().apply {
+            put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
+            put(MediaStore.MediaColumns.MIME_TYPE, "text/plain")  // Use text/plain MIME type for .txt files
+            put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOCUMENTS)
+        }
+
+        val resolver = context.contentResolver
+        val existingUri = getExistingFileUri(resolver, fileName)
+
+        val uri = existingUri ?: resolver.insert(MediaStore.Files.getContentUri("external"), contentValues)
 
         try {
-            FileWriter(file).use { writer ->
-                writer.append(reactionTimeData.toString())
-                Log.d("NBackTaskApp", "Reaction time data saved to ${file.absolutePath}")
+            uri?.let {
+                resolver.openOutputStream(it, if (existingUri == null) "wa" else "wa").use { outputStream ->
+                    if (outputStream != null) {
+                        outputStream.write(reactionTimeData.toString().toByteArray())
+                        Log.d("NBackTaskApp", "Reaction time data saved to ${uri.path}")
+                    } else {
+                        Log.e("NBackTaskApp", "Failed to open output stream for $uri")
+                        Toast.makeText(context, "Failed to save reaction time data", Toast.LENGTH_LONG).show()
+                    }
+                }
+            } ?: run {
+                Log.e("NBackTaskApp", "Failed to create file")
+                Toast.makeText(context, "Failed to create file for reaction time data", Toast.LENGTH_LONG).show()
             }
         } catch (e: IOException) {
-            e.printStackTrace()
+            Log.e("NBackTaskApp", "IOException while saving reaction time data", e)
+            Toast.makeText(context, "Error saving reaction time data", Toast.LENGTH_LONG).show()
         }
     }
+
+
+    private fun saveAccuracyData(context: Context, accuracy: Double) {
+        val fileName = "accuracy_data.csv"
+        val csvHeader = "Accuracy (%)\n"
+        val contentValues = ContentValues().apply {
+            put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
+            put(MediaStore.MediaColumns.MIME_TYPE, "text/csv")
+            put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOCUMENTS)
+        }
+
+        val resolver = context.contentResolver
+        val existingUri = getExistingFileUri(resolver, fileName)
+
+        val uri = existingUri ?: resolver.insert(MediaStore.Files.getContentUri("external"), contentValues)
+
+        try {
+            uri?.let {
+                resolver.openOutputStream(it, if (existingUri == null) "wa" else "wa").use { outputStream ->
+                    if (outputStream != null) {
+                        if (existingUri == null || fileIsEmpty(context, it)) {
+                            // Write the header if the file is new or empty
+                            outputStream.write(csvHeader.toByteArray())
+                        }
+                        // Write the accuracy under the header
+                        outputStream.write("${"%.2f".format(accuracy)}%\n".toByteArray())
+                        Log.d("NBackTaskApp", "Accuracy data saved to ${uri.path}")
+                    } else {
+                        Log.e("NBackTaskApp", "Failed to open output stream for $uri")
+                        Toast.makeText(context, "Failed to save accuracy data", Toast.LENGTH_LONG).show()
+                    }
+                }
+            } ?: run {
+                Log.e("NBackTaskApp", "Failed to create file")
+                Toast.makeText(context, "Failed to create file for accuracy data", Toast.LENGTH_LONG).show()
+            }
+        } catch (e: IOException) {
+            Log.e("NBackTaskApp", "IOException while saving accuracy data", e)
+            Toast.makeText(context, "Error saving accuracy data", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun getExistingFileUri(resolver: android.content.ContentResolver, fileName: String): android.net.Uri? {
+        val projection = arrayOf(MediaStore.MediaColumns._ID)
+        val selection = "${MediaStore.MediaColumns.DISPLAY_NAME}=?"
+        val selectionArgs = arrayOf(fileName)
+        val queryUri = MediaStore.Files.getContentUri("external")
+
+        resolver.query(queryUri, projection, selection, selectionArgs, null)?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                val id = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID))
+                return android.net.Uri.withAppendedPath(queryUri, id.toString())
+            }
+        }
+        return null
+    }
+
+    private fun fileIsEmpty(context: Context, uri: android.net.Uri): Boolean {
+        val resolver = context.contentResolver
+        resolver.openInputStream(uri)?.use { inputStream ->
+            return inputStream.available() == 0
+        }
+        return false
+    }
+
+
     private fun generateNBackSequence() {
         val targetNumbers = mutableListOf<Int>()
         var matchCount = 0

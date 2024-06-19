@@ -17,7 +17,7 @@ import com.example.nbacktaskapp.ui.theme.NBackTaskAppTheme
 import java.io.IOException
 
 @Composable
-fun RatingScreen() {
+fun RatingScreen(onSubmitRating: (Int) -> Unit) {
     var rating by remember { mutableStateOf(4f) }
     val context = LocalContext.current
 
@@ -59,7 +59,7 @@ fun RatingScreen() {
         }
         Button(
             onClick = {
-                saveRating(context, rating.toInt())
+                onSubmitRating(rating.toInt())
                 Toast.makeText(context, "Your response has been submitted", Toast.LENGTH_SHORT).show()
             },
             modifier = Modifier.padding(top = 16.dp)
@@ -128,6 +128,6 @@ fun fileIsEmpty(context: Context, uri: android.net.Uri): Boolean {
 @Composable
 fun RatingScreenPreview() {
     NBackTaskAppTheme {
-        RatingScreen()
+        RatingScreen(onSubmitRating = {})
     }
 }
