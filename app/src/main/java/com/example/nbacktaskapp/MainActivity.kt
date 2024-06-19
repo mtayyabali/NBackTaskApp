@@ -72,8 +72,8 @@ class MainActivity : ComponentActivity(), SensorEventListener {
     private fun nextNBackTask() {
         setContent {
             NBackTaskAppTheme {
-                RatingScreen(onSubmitRating = { rating ->
-                    saveRating(applicationContext, rating)
+                RatingScreen(currentTask = taskLevels[currentTaskIndex], onSubmitRating = { rating ->
+                    saveRating(applicationContext, taskLevels[currentTaskIndex], rating)
                     currentTaskIndex = (currentTaskIndex + 1) % taskLevels.size
                     startNBackTask()
                 })

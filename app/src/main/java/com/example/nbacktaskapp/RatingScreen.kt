@@ -10,16 +10,12 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import com.example.nbacktaskapp.ui.theme.NBackTaskAppTheme
-import java.io.IOException
 
 @Composable
-fun RatingScreen(onSubmitRating: (Int) -> Unit) {
-    var rating by remember { mutableStateOf(4f) }
-    val context = LocalContext.current
+fun RatingScreen(currentTask: Int, onSubmitRating: (Int) -> Unit) {
+    var rating by remember { mutableStateOf(1) }
 
     Column(
         modifier = Modifier
@@ -29,8 +25,9 @@ fun RatingScreen(onSubmitRating: (Int) -> Unit) {
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text(
-            text = "Rate the difficulty of the task",
-            style = MaterialTheme.typography.headlineMedium,
+            text = "Rate the Difficulty of the ${currentTask}-back Task",
+            style = MaterialTheme.typography.headlineSmall,
+            textAlign = TextAlign.Center,
             modifier = Modifier.padding(bottom = 16.dp)
         )
         Row(
@@ -42,10 +39,10 @@ fun RatingScreen(onSubmitRating: (Int) -> Unit) {
             }
         }
         Slider(
-            value = rating,
-            onValueChange = { rating = it },
+            value = rating.toFloat(),
+            onValueChange = { rating = it.toInt() },
             valueRange = 1f..7f,
-            steps = 5,
+            steps = 6,
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp)
@@ -57,21 +54,15 @@ fun RatingScreen(onSubmitRating: (Int) -> Unit) {
             Text(text = "Very Easy", modifier = Modifier.padding(start = 8.dp))
             Text(text = "Very Difficult", modifier = Modifier.padding(end = 8.dp))
         }
-        Button(
-            onClick = {
-                onSubmitRating(rating.toInt())
-                Toast.makeText(context, "Your response has been submitted", Toast.LENGTH_SHORT).show()
-            },
-            modifier = Modifier.padding(top = 16.dp)
-        ) {
-            Text("Submit")
+        Button(onClick = { onSubmitRating(rating) }, modifier = Modifier.padding(top = 16.dp)) {
+            Text("Submit Rating")
         }
     }
 }
 
-fun saveRating(context: Context, rating: Int) {
+fun saveRating(context: Context, currentTask: Int, rating: Int) {
     val fileName = "ratings.csv"
-    val csvHeader = "Difficulty rating\n"
+    val csvHeader = "n-back Task,Difficulty rating\n"
     val contentValues = ContentValues().apply {
         put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
         put(MediaStore.MediaColumns.MIME_TYPE, "text/csv")
@@ -90,8 +81,8 @@ fun saveRating(context: Context, rating: Int) {
                     // Write the header if the file is new or empty
                     outputStream.write(csvHeader.toByteArray())
                 }
-                // Write the rating under the header
-                outputStream.write("$rating\n".toByteArray())
+                // Write the task and rating under the header
+                outputStream.write("$currentTask,$rating\n".toByteArray())
             }
         } ?: run {
             Toast.makeText(context, "Failed to save file", Toast.LENGTH_LONG).show()
@@ -101,33 +92,33 @@ fun saveRating(context: Context, rating: Int) {
     }
 }
 
-fun getExistingFileUri(resolver: android.content.ContentResolver, fileName: String): android.net.Uri? {
+private fun getExistingFileUri(resolver: android.content.ContentResolver, fileName: String): android.net.Uri? {
     val projection = arrayOf(MediaStore.MediaColumns._ID)
     val selection = "${MediaStore.MediaColumns.DISPLAY_NAME}=?"
     val selectionArgs = arrayOf(fileName)
-    val queryUri = MediaStore.Files.getContentUri("external")
 
-    resolver.query(queryUri, projection, selection, selectionArgs, null)?.use { cursor ->
-        if (cursor.moveToFirst()) {
-            val id = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID))
-            return android.net.Uri.withAppendedPath(queryUri, id.toString())
+    val cursor = resolver.query(
+        MediaStore.Files.getContentUri("external"),
+        projection,
+        selection,
+        selectionArgs,
+        null
+    )
+
+    return cursor?.use {
+        if (it.moveToFirst()) {
+            val id = it.getLong(it.getColumnIndexOrThrow(MediaStore.MediaColumns._ID))
+            android.net.Uri.withAppendedPath(MediaStore.Files.getContentUri("external"), id.toString())
+        } else {
+            null
         }
     }
-    return null
 }
 
-fun fileIsEmpty(context: Context, uri: android.net.Uri): Boolean {
-    val resolver = context.contentResolver
-    resolver.openInputStream(uri)?.use { inputStream ->
-        return inputStream.available() == 0
-    }
-    return false
-}
-
-@Preview(showBackground = true)
-@Composable
-fun RatingScreenPreview() {
-    NBackTaskAppTheme {
-        RatingScreen(onSubmitRating = {})
-    }
+private fun fileIsEmpty(context: Context, uri: android.net.Uri): Boolean {
+    return context.contentResolver.openInputStream(uri).use { inputStream ->
+        inputStream?.bufferedReader()?.use { reader ->
+            reader.readLine() == null
+        }
+    } ?: true
 }
