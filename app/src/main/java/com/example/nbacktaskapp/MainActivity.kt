@@ -26,7 +26,7 @@ import kotlin.random.Random
 import android.content.ContentValues
 import android.provider.MediaStore
 import android.widget.Toast
-
+import androidx.compose.ui.graphics.Color
 
 class MainActivity : ComponentActivity(), SensorEventListener {
 
@@ -44,6 +44,14 @@ class MainActivity : ComponentActivity(), SensorEventListener {
     private val reactionTimeData = StringBuilder()
     private var numberDisplayedTime: Long = 0
 
+    private var showTutorial by mutableStateOf(true)
+    private var tutorialExampleRunning by mutableStateOf(false)
+    private var tutorialIndex by mutableStateOf(0)
+    private val tutorialSequence = listOf(1, 2, 3, 1, 4) // Example sequence for the tutorial
+    private val tutorialNBackNumber = 2
+    private var feedbackMessage by mutableStateOf("")
+    private var feedbackColor by mutableStateOf(Color.Green)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
@@ -55,7 +63,35 @@ class MainActivity : ComponentActivity(), SensorEventListener {
 
         setContent {
             NBackTaskAppTheme {
-                MainScreen(onStartTask = { startNBackTask() })
+                if (showTutorial) {
+                    if (tutorialExampleRunning) {
+                        TutorialExampleScreen(
+                            currentNumber = tutorialSequence[tutorialIndex],
+                            onNext = {
+                                tutorialIndex++
+                                if (tutorialIndex >= tutorialSequence.size) {
+                                    tutorialExampleRunning = false
+                                    tutorialIndex = 0
+                                }
+                            },
+                            tutorialNBackNumber = tutorialNBackNumber,
+                            sequence = tutorialSequence,
+                            index = tutorialIndex
+                        )
+                    } else {
+                        TutorialScreen(
+                            onStartTutorial = {
+                                tutorialExampleRunning = true
+                            },
+                            onSkipTutorial = {
+                                showTutorial = false
+                                startNBackTask()
+                            }
+                        )
+                    }
+                } else {
+                    MainScreen(onStartTask = { startNBackTask() })
+                }
             }
         }
     }
@@ -85,9 +121,39 @@ class MainActivity : ComponentActivity(), SensorEventListener {
         val reactionTime = System.currentTimeMillis() - numberDisplayedTime
         reactionTimeData.append("Reaction Time: $reactionTime ms\n")
 
-        if (currentIndex >= nBackNumber && nBackSequence[currentIndex] == nBackSequence[currentIndex - nBackNumber]) {
+        val isMatch = currentIndex >= nBackNumber && nBackSequence[currentIndex] == nBackSequence[currentIndex - nBackNumber]
+        if (isMatch) {
             matchCount++
+            feedbackMessage = "Correct! This number matches the one from $nBackNumber steps earlier."
+            feedbackColor = Color.Green
+        } else {
+            feedbackMessage = "Incorrect. Try to remember the sequence better."
+            feedbackColor = Color.Red
         }
+        // Refresh the UI with feedback
+        setContent {
+            NBackTaskAppTheme {
+                NBackTaskScreen(
+                    onStartTask = { startNBackTask() },
+                    onNextTask = { nextNBackTask() },
+                    onMatchPress = { handleMatchPress() },
+                    currentNumber = nBackSequence[currentIndex],
+                    isTaskRunning = true,
+                    showNumber = true,
+                    showFeedback = true,
+                    feedbackMessage = feedbackMessage,
+                    showAccuracy = false,
+                    accuracy = 0.0,
+                    currentTask = taskLevels[currentTaskIndex]
+                )
+            }
+        }
+    }
+
+    private fun restartNBackTask() {
+        taskLevels.shuffle()
+        currentTaskIndex = 0
+        startNBackTask()
     }
 
     private fun endNBackTask() {
@@ -111,6 +177,8 @@ class MainActivity : ComponentActivity(), SensorEventListener {
                     currentNumber = null,
                     isTaskRunning = false,
                     showNumber = false,
+                    showFeedback = false,
+                    feedbackMessage = "",
                     showAccuracy = true,
                     accuracy = accuracy,
                     currentTask = taskLevels[currentTaskIndex]
@@ -118,7 +186,6 @@ class MainActivity : ComponentActivity(), SensorEventListener {
             }
         }
     }
-
 
     private fun saveAccelerometerData() {
         val fileName = "accelerometer_data.txt"
@@ -167,7 +234,6 @@ class MainActivity : ComponentActivity(), SensorEventListener {
             Toast.makeText(context, "Error saving reaction time data", Toast.LENGTH_LONG).show()
         }
     }
-
 
     private fun saveAccuracyData(context: Context, accuracy: Double) {
         val fileName = "accuracy_data.csv"
@@ -232,7 +298,6 @@ class MainActivity : ComponentActivity(), SensorEventListener {
         return false
     }
 
-
     private fun generateNBackSequence() {
         val targetNumbers = mutableListOf<Int>()
         var matchCount = 0
@@ -283,14 +348,13 @@ class MainActivity : ComponentActivity(), SensorEventListener {
                         showNumber = true,
                         showAccuracy = false,
                         accuracy = 0.0,
-                        currentTask = taskLevels[currentTaskIndex]
+                        currentTask = taskLevels[currentTaskIndex],
+                        feedbackMessage = feedbackMessage,
+                        showFeedback = true,
                     )
                 }
             }
         }
-
-
-
 
         Thread {
             try {
@@ -307,7 +371,9 @@ class MainActivity : ComponentActivity(), SensorEventListener {
                                 showNumber = false,
                                 showAccuracy = false,
                                 accuracy = 0.0,
-                                currentTask = taskLevels[currentTaskIndex]
+                                currentTask = taskLevels[currentTaskIndex],
+                                feedbackMessage = feedbackMessage,
+                                showFeedback = true,
                             )
                         }
                     }
@@ -369,7 +435,9 @@ fun NBackTaskScreen(
     showNumber: Boolean,
     showAccuracy: Boolean,
     accuracy: Double,
-    currentTask: Int
+    currentTask: Int,
+    showFeedback: Boolean,
+    feedbackMessage: String
 ) {
     Column(
         modifier = Modifier
@@ -384,6 +452,16 @@ fun NBackTaskScreen(
             textAlign = TextAlign.Center,
             modifier = Modifier.padding(bottom = 16.dp)
         )
+
+        if (showFeedback) {
+            Text(
+                text = feedbackMessage,
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.error,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(bottom = 16.dp)
+            )
+        }
 
         if (showAccuracy) {
             Text(
@@ -420,6 +498,105 @@ fun NBackTaskScreen(
     }
 }
 
+@Composable
+fun TutorialScreen(onStartTutorial: () -> Unit, onSkipTutorial: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            text = "Welcome to the N-Back Task Tutorial",
+            style = MaterialTheme.typography.headlineMedium,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(bottom = 16.dp)
+        )
+        Text(
+            text = "In this task, you will see a sequence of numbers. Your job is to identify when the current number matches the one presented n steps earlier.",
+            style = MaterialTheme.typography.bodyLarge,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(bottom = 16.dp)
+        )
+        Text(
+            text = "For example, in a 2-back task, you should press the 'Match' button if the current number is the same as the number shown 2 steps before.",
+            style = MaterialTheme.typography.bodyLarge,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(bottom = 16.dp)
+        )
+        Button(
+            onClick = onStartTutorial,
+            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+        ) {
+            Text("Start Tutorial")
+        }
+        Button(
+            onClick = onSkipTutorial,
+            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+        ) {
+            Text("Skip Tutorial")
+        }
+    }
+}
+
+@Composable
+fun TutorialExampleScreen(currentNumber: Int, onNext: () -> Unit, tutorialNBackNumber: Int, sequence: List<Int>, index: Int) {
+    val match = remember { mutableStateOf(false) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            text = "Tutorial Example",
+            style = MaterialTheme.typography.headlineMedium,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(bottom = 16.dp)
+        )
+        Text(
+            text = "Current Number: $currentNumber",
+            style = MaterialTheme.typography.headlineLarge,
+            modifier = Modifier.padding(bottom = 16.dp)
+        )
+        Text(
+            text = "Does this number match the one from $tutorialNBackNumber steps earlier?",
+            style = MaterialTheme.typography.bodyLarge,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(bottom = 16.dp)
+        )
+        Button(
+            onClick = {
+                if (index >= tutorialNBackNumber && sequence[index] == sequence[index - tutorialNBackNumber]) {
+                    match.value = true
+                }
+                onNext()
+            },
+            modifier = Modifier.padding(top = 16.dp)
+        ) {
+            Text("Match")
+        }
+        if (match.value) {
+            Text(
+                text = "Correct! This number matches the one from $tutorialNBackNumber steps earlier.",
+                style = MaterialTheme.typography.bodyLarge,
+                textAlign = TextAlign.Center,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(top = 16.dp)
+            )
+        }
+        Button(
+            onClick = onNext,
+            modifier = Modifier.padding(top = 16.dp)
+        ) {
+            Text("Next")
+        }
+    }
+}
+
 @Preview(showBackground = true)
 @Composable
 fun MainScreenPreview() {
@@ -441,7 +618,26 @@ fun NBackTaskScreenPreview() {
             showNumber = true,
             showAccuracy = false,
             accuracy = 0.0,
-            currentTask = 1
+            currentTask = 1,
+            showFeedback = false,
+            feedbackMessage = "Correct!"
         )
     }
 }
+
+@Preview(showBackground = true)
+@Composable
+fun TutorialScreenPreview() {
+    NBackTaskAppTheme {
+        TutorialScreen(onStartTutorial = {}, onSkipTutorial = {})
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+fun TutorialExampleScreenPreview() {
+    NBackTaskAppTheme {
+        TutorialExampleScreen(currentNumber = 3, onNext = {}, tutorialNBackNumber = 2, sequence = listOf(1, 2, 3, 1, 4), index = 2)
+    }
+}
+
