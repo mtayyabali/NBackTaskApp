@@ -19,14 +19,15 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.example.nbacktaskapp.ui.theme.NBackTaskAppTheme
-import java.io.File
-import java.io.FileWriter
 import java.io.IOException
 import kotlin.random.Random
 import android.content.ContentValues
 import android.provider.MediaStore
 import android.widget.Toast
 import androidx.compose.ui.graphics.Color
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 class MainActivity : ComponentActivity(), SensorEventListener {
 
@@ -118,6 +119,7 @@ class MainActivity : ComponentActivity(), SensorEventListener {
     private fun startNBackTask() {
         feedbackMessage = ""
         nBackNumber = taskLevels[currentTaskIndex]
+        accelerometerData.clear() // Clear previous accelerometer data
         sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_NORMAL)
         generateNBackSequence()
         matchCount = 0
@@ -179,7 +181,7 @@ class MainActivity : ComponentActivity(), SensorEventListener {
 
     private fun endNBackTask() {
         sensorManager.unregisterListener(this)
-        saveAccelerometerData()
+        saveAccelerometerData(this)
         saveReactionTimeData(this)
         val accuracy = if (sequenceLength > 0) {
             val calculatedAccuracy = (matchCount.toDouble() / sequenceLength) * 100
@@ -209,22 +211,43 @@ class MainActivity : ComponentActivity(), SensorEventListener {
         }
     }
 
-    private fun saveAccelerometerData() {
-        val fileName = "accelerometer_data.txt"
-        val file = File(getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS), fileName)
+    private fun saveAccelerometerData(context: Context) {
+        val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+        val fileName = "accelerometer_data_$timestamp.txt"
+        val contentValues = ContentValues().apply {
+            put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
+            put(MediaStore.MediaColumns.MIME_TYPE, "text/plain")
+            put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOCUMENTS)
+        }
+        val resolver = context.contentResolver
+        val existingUri = getExistingFileUri(resolver, fileName)
+
+        val uri = existingUri ?: resolver.insert(MediaStore.Files.getContentUri("external"), contentValues)
 
         try {
-            FileWriter(file).use { writer ->
-                writer.append(accelerometerData.toString())
-                Log.d("NBackTaskApp", "Accelerometer data saved to ${file.absolutePath}")
+            uri?.let {
+                resolver.openOutputStream(it, if (existingUri == null) "wa" else "wa").use { outputStream ->
+                    if (outputStream != null) {
+                        outputStream.write(accelerometerData.toString().toByteArray())
+                        Log.d("NBackTaskApp", "Accelerometer data saved to ${uri.path}")
+                    } else {
+                        Log.e("NBackTaskApp", "Failed to open output stream for $uri")
+                        Toast.makeText(context, "Failed to save accelerometer data", Toast.LENGTH_LONG).show()
+                    }
+                }
+            } ?: run {
+                Log.e("NBackTaskApp", "Failed to create file")
+                Toast.makeText(context, "Failed to create file for accelerometer data", Toast.LENGTH_LONG).show()
             }
         } catch (e: IOException) {
-            e.printStackTrace()
+            Log.e("NBackTaskApp", "IOException while saving accelerometer data", e)
+            Toast.makeText(context, "Error saving accelerometer data", Toast.LENGTH_LONG).show()
         }
     }
 
     private fun saveReactionTimeData(context: Context) {
-        val fileName = "reaction_time_data.txt"
+        val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+        val fileName = "reaction_time_data_$timestamp.txt"
         val contentValues = ContentValues().apply {
             put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
             put(MediaStore.MediaColumns.MIME_TYPE, "text/plain")  // Use text/plain MIME type for .txt files
@@ -258,7 +281,8 @@ class MainActivity : ComponentActivity(), SensorEventListener {
     }
 
     private fun saveAccuracyData(context: Context, accuracy: Double) {
-        val fileName = "accuracy_data.csv"
+        val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+        val fileName = "accuracy_data_$timestamp.csv"
         val csvHeader = "Accuracy (%)\n"
         val contentValues = ContentValues().apply {
             put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
@@ -608,9 +632,6 @@ fun TutorialExampleScreen(
         if (!match.value && !incorrect.value) {
             Button(
                 onClick = {
-                    Log.d("index", index.toString())
-                    Log.d("sequence[index]", sequence[index].toString())
-                    Log.d("sequence[index - tutorialNBackNumber]", sequence[index - tutorialNBackNumber].toString())
                     if (index >= tutorialNBackNumber && sequence[index] == sequence[index - tutorialNBackNumber]) {
                         match.value = true
                         onCorrectAnswer()
@@ -634,7 +655,7 @@ fun TutorialExampleScreen(
                 text = "Correct! You have made the right choice and are ready for the n-back task.",
                 style = MaterialTheme.typography.bodyLarge,
                 textAlign = TextAlign.Center,
-                color = MaterialTheme.colorScheme.primary,
+                color = Color.Green,
                 modifier = Modifier.padding(top = 16.dp)
             )
             Button(
