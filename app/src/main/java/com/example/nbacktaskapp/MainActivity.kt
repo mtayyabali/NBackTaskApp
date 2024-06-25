@@ -47,15 +47,14 @@ class MainActivity : ComponentActivity(), SensorEventListener {
     private var showTutorial by mutableStateOf(true)
     private var tutorialExampleRunning by mutableStateOf(false)
     private var tutorialIndex by mutableStateOf(0)
-    private val tutorialSequence = listOf(1, 2, 3, 1, 4) // Example sequence for the tutorial
+    private val tutorialSequence = listOf(2, 1, 3, 1, 4) // Example sequence for the tutorial
     private val tutorialNBackNumber = 2
     private var feedbackMessage by mutableStateOf("")
     private var feedbackColor by mutableStateOf(Color.Green)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
-        accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+        setupSensors()
 
         // Initialize and shuffle task levels
         taskLevels = mutableListOf(1, 2, 3)
@@ -76,7 +75,22 @@ class MainActivity : ComponentActivity(), SensorEventListener {
                             },
                             tutorialNBackNumber = tutorialNBackNumber,
                             sequence = tutorialSequence,
-                            index = tutorialIndex
+                            index = tutorialIndex,
+                            onCorrectAnswer = {
+                                feedbackMessage = "Correct! You have made the right choice."
+                                feedbackColor = Color.Green
+                            },
+                            onRestartTutorial = {
+                                tutorialExampleRunning = true
+                                tutorialIndex = 0
+                            },
+                            onStartTask = { startNBackTask() },
+                            onFinishTutorial = {
+                                showTutorial = false
+                                setContent {
+                                    MainScreen(onStartTask = { startNBackTask() })
+                                }
+                            }
                         )
                     } else {
                         TutorialScreen(
@@ -96,7 +110,13 @@ class MainActivity : ComponentActivity(), SensorEventListener {
         }
     }
 
+    private fun setupSensors() {
+        sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
+        accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+    }
+
     private fun startNBackTask() {
+        feedbackMessage = ""
         nBackNumber = taskLevels[currentTaskIndex]
         sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_NORMAL)
         generateNBackSequence()
@@ -142,6 +162,7 @@ class MainActivity : ComponentActivity(), SensorEventListener {
                     showNumber = true,
                     showFeedback = true,
                     feedbackMessage = feedbackMessage,
+                    feedbackColor = feedbackColor,
                     showAccuracy = false,
                     accuracy = 0.0,
                     currentTask = taskLevels[currentTaskIndex]
@@ -179,6 +200,7 @@ class MainActivity : ComponentActivity(), SensorEventListener {
                     showNumber = false,
                     showFeedback = false,
                     feedbackMessage = "",
+                    feedbackColor = feedbackColor,
                     showAccuracy = true,
                     accuracy = accuracy,
                     currentTask = taskLevels[currentTaskIndex]
@@ -350,6 +372,7 @@ class MainActivity : ComponentActivity(), SensorEventListener {
                         accuracy = 0.0,
                         currentTask = taskLevels[currentTaskIndex],
                         feedbackMessage = feedbackMessage,
+                        feedbackColor = feedbackColor,
                         showFeedback = true,
                     )
                 }
@@ -373,6 +396,7 @@ class MainActivity : ComponentActivity(), SensorEventListener {
                                 accuracy = 0.0,
                                 currentTask = taskLevels[currentTaskIndex],
                                 feedbackMessage = feedbackMessage,
+                                feedbackColor = feedbackColor,
                                 showFeedback = true,
                             )
                         }
@@ -437,7 +461,8 @@ fun NBackTaskScreen(
     accuracy: Double,
     currentTask: Int,
     showFeedback: Boolean,
-    feedbackMessage: String
+    feedbackMessage: String,
+    feedbackColor: Color
 ) {
     Column(
         modifier = Modifier
@@ -457,7 +482,7 @@ fun NBackTaskScreen(
             Text(
                 text = feedbackMessage,
                 style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.error,
+                color = feedbackColor,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.padding(bottom = 16.dp)
             )
@@ -541,8 +566,19 @@ fun TutorialScreen(onStartTutorial: () -> Unit, onSkipTutorial: () -> Unit) {
 }
 
 @Composable
-fun TutorialExampleScreen(currentNumber: Int, onNext: () -> Unit, tutorialNBackNumber: Int, sequence: List<Int>, index: Int) {
+fun TutorialExampleScreen(
+    currentNumber: Int,
+    onNext: () -> Unit,
+    tutorialNBackNumber: Int,
+    sequence: List<Int>,
+    index: Int,
+    onCorrectAnswer: () -> Unit,
+    onRestartTutorial: () -> Unit,
+    onStartTask: () -> Unit,
+    onFinishTutorial: () -> Unit
+) {
     val match = remember { mutableStateOf(false) }
+    val incorrect = remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -553,6 +589,7 @@ fun TutorialExampleScreen(currentNumber: Int, onNext: () -> Unit, tutorialNBackN
     ) {
         Text(
             text = "Tutorial Example",
+            color = MaterialTheme.colorScheme.inversePrimary,
             style = MaterialTheme.typography.headlineMedium,
             textAlign = TextAlign.Center,
             modifier = Modifier.padding(bottom = 16.dp)
@@ -563,36 +600,74 @@ fun TutorialExampleScreen(currentNumber: Int, onNext: () -> Unit, tutorialNBackN
             modifier = Modifier.padding(bottom = 16.dp)
         )
         Text(
-            text = "Does this number match the one from $tutorialNBackNumber steps earlier?",
+            text = "Does this number match the one from $tutorialNBackNumber steps earlier?\n If yes, then press the 'Match' button otherwise press the 'Next' button.",
             style = MaterialTheme.typography.bodyLarge,
             textAlign = TextAlign.Center,
             modifier = Modifier.padding(bottom = 16.dp)
         )
-        Button(
-            onClick = {
-                if (index >= tutorialNBackNumber && sequence[index] == sequence[index - tutorialNBackNumber]) {
-                    match.value = true
-                }
-                onNext()
-            },
-            modifier = Modifier.padding(top = 16.dp)
-        ) {
-            Text("Match")
+        if (!match.value && !incorrect.value) {
+            Button(
+                onClick = {
+                    Log.d("index", index.toString())
+                    Log.d("sequence[index]", sequence[index].toString())
+                    Log.d("sequence[index - tutorialNBackNumber]", sequence[index - tutorialNBackNumber].toString())
+                    if (index >= tutorialNBackNumber && sequence[index] == sequence[index - tutorialNBackNumber]) {
+                        match.value = true
+                        onCorrectAnswer()
+                    } else {
+                        incorrect.value = true
+                    }
+                },
+                modifier = Modifier.padding(top = 16.dp)
+            ) {
+                Text("Match")
+            }
+            Button(
+                onClick = onNext,
+                modifier = Modifier.padding(top = 16.dp)
+            ) {
+                Text("Next")
+            }
         }
         if (match.value) {
             Text(
-                text = "Correct! This number matches the one from $tutorialNBackNumber steps earlier.",
+                text = "Correct! You have made the right choice and are ready for the n-back task.",
                 style = MaterialTheme.typography.bodyLarge,
                 textAlign = TextAlign.Center,
                 color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.padding(top = 16.dp)
             )
+            Button(
+                onClick = onFinishTutorial,
+                modifier = Modifier.padding(top = 16.dp)
+            ) {
+                Text("Finish")
+            }
+            Button(
+                onClick = onStartTask,
+                modifier = Modifier.padding(top = 16.dp)
+            ) {
+                Text("Start Task")
+            }
         }
-        Button(
-            onClick = onNext,
-            modifier = Modifier.padding(top = 16.dp)
-        ) {
-            Text("Next")
+        if (incorrect.value) {
+            Text(
+                text = "Incorrect. The match was not correct.",
+                style = MaterialTheme.typography.bodyLarge,
+                textAlign = TextAlign.Center,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(top = 16.dp)
+            )
+            Button(
+                onClick = {
+                    match.value = false
+                    incorrect.value = false
+                    onRestartTutorial()
+                },
+                modifier = Modifier.padding(top = 16.dp)
+            ) {
+                Text("Restart Tutorial")
+            }
         }
     }
 }
@@ -620,7 +695,8 @@ fun NBackTaskScreenPreview() {
             accuracy = 0.0,
             currentTask = 1,
             showFeedback = false,
-            feedbackMessage = "Correct!"
+            feedbackMessage = "Correct!",
+            feedbackColor = Color.Green
         )
     }
 }
@@ -637,7 +713,15 @@ fun TutorialScreenPreview() {
 @Composable
 fun TutorialExampleScreenPreview() {
     NBackTaskAppTheme {
-        TutorialExampleScreen(currentNumber = 3, onNext = {}, tutorialNBackNumber = 2, sequence = listOf(1, 2, 3, 1, 4), index = 2)
+        TutorialExampleScreen(
+            currentNumber = 3,
+            onNext = {},
+            tutorialNBackNumber = 2,
+            sequence = listOf(1, 2, 3, 1, 4),
+            index = 2,
+            onCorrectAnswer = {},
+            onRestartTutorial = {},
+            onStartTask = {},
+            onFinishTutorial = {})
     }
 }
-
