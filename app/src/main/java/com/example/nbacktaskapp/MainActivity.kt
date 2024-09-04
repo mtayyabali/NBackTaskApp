@@ -54,14 +54,10 @@ class MainActivity : ComponentActivity(), SensorEventListener {
     private var feedbackMessage by mutableStateOf("")
     private var feedbackColor by mutableStateOf(Color.Green)
 
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        setupSensors()
+    // Coroutine job to manage the running task
+    private var taskJob: Job? = null
 
-        // Initialize and shuffle task levels
-        taskLevels = mutableListOf(1, 2, 3)
-        taskLevels.shuffle()
-
+    private fun startupScreen() {
         setContent {
             NBackTaskAppTheme {
                 if (showTutorial) {
@@ -92,7 +88,8 @@ class MainActivity : ComponentActivity(), SensorEventListener {
                                 setContent {
                                     MainScreen(onStartTask = { startNBackTask() })
                                 }
-                            }
+                            },
+                            onExitTask = { exitToStartScreen() }
                         )
                     } else {
                         TutorialScreen(
@@ -102,7 +99,8 @@ class MainActivity : ComponentActivity(), SensorEventListener {
                             onSkipTutorial = {
                                 showTutorial = false
                                 startNBackTask()
-                            }
+                            },
+                            onExitTask = { exitToStartScreen() }
                         )
                     }
                 } else {
@@ -110,6 +108,17 @@ class MainActivity : ComponentActivity(), SensorEventListener {
                 }
             }
         }
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setupSensors()
+
+        // Initialize and shuffle task levels
+        taskLevels = mutableListOf(1, 2, 3)
+        taskLevels.shuffle()
+
+        startupScreen()
     }
 
     private fun setupSensors() {
@@ -125,7 +134,35 @@ class MainActivity : ComponentActivity(), SensorEventListener {
         generateNBackSequence()
         matchCount = 0
         currentIndex = 0
-        displayNextNumber()
+
+        // Show the countdown before the task starts
+        setContent {
+            NBackTaskAppTheme {
+                CountdownScreen(countdownTime = 3) {
+                    // After countdown ends, start the actual task
+                    taskJob = CoroutineScope(Dispatchers.Main).launch {
+                        displayNextNumber()
+                    }
+                }
+            }
+        }
+    }
+
+    private fun exitToStartScreen() {
+        // Cancel the current task if it's running
+        taskJob?.cancel()
+        taskJob = null
+
+        accelerometerData.clear()
+        setupSensors()
+
+        // Initialize and shuffle task levels
+        taskLevels = mutableListOf(1, 2, 3)
+        taskLevels.shuffle()
+        showTutorial = true
+        tutorialExampleRunning = false
+        tutorialIndex = 0
+        startupScreen()
     }
 
     private fun nextNBackTask() {
@@ -168,7 +205,8 @@ class MainActivity : ComponentActivity(), SensorEventListener {
                     feedbackColor = feedbackColor,
                     showAccuracy = false,
                     accuracy = 0.0,
-                    currentTask = taskLevels[currentTaskIndex]
+                    currentTask = taskLevels[currentTaskIndex],
+                    onExitTask = { exitToStartScreen() }
                 )
             }
         }
@@ -206,7 +244,8 @@ class MainActivity : ComponentActivity(), SensorEventListener {
                     feedbackColor = feedbackColor,
                     showAccuracy = true,
                     accuracy = accuracy,
-                    currentTask = taskLevels[currentTaskIndex]
+                    currentTask = taskLevels[currentTaskIndex],
+                    onExitTask = { exitToStartScreen() }
                 )
             }
         }
@@ -375,7 +414,7 @@ class MainActivity : ComponentActivity(), SensorEventListener {
         Log.d("NBackTaskApp", "Generated n-back sequence: $nBackSequence")
     }
 
-    private fun displayNextNumber() {
+    private suspend fun displayNextNumber() {
         if (currentIndex >= nBackSequence.size) {
             endNBackTask()
             return
@@ -383,51 +422,49 @@ class MainActivity : ComponentActivity(), SensorEventListener {
 
         numberDisplayedTime = System.currentTimeMillis()  // Set the display time
 
-        runOnUiThread {
-            setContent {
-                NBackTaskAppTheme {
-                    NBackTaskScreen(
-                        onStartTask = { startNBackTask() },
-                        onNextTask = { nextNBackTask() },
-                        onMatchPress = { handleMatchPress() },
-                        currentNumber = nBackSequence[currentIndex],
-                        isTaskRunning = true,
-                        showNumber = true,
-                        showAccuracy = false,
-                        accuracy = 0.0,
-                        currentTask = taskLevels[currentTaskIndex],
-                        feedbackMessage = feedbackMessage,
-                        feedbackColor = feedbackColor,
-                        showFeedback = true,
-                    )
-                }
+        setContent {
+            NBackTaskAppTheme {
+                NBackTaskScreen(
+                    onStartTask = { startNBackTask() },
+                    onNextTask = { nextNBackTask() },
+                    onMatchPress = { handleMatchPress() },
+                    currentNumber = nBackSequence[currentIndex],
+                    isTaskRunning = true,
+                    showNumber = true,
+                    showAccuracy = false,
+                    accuracy = 0.0,
+                    currentTask = taskLevels[currentTaskIndex],
+                    feedbackMessage = feedbackMessage,
+                    feedbackColor = feedbackColor,
+                    showFeedback = true,
+                    onExitTask = { exitToStartScreen() }
+                )
             }
         }
 
-        CoroutineScope(Dispatchers.Main).launch {
-            delay(1000L)
-            setContent {
-                NBackTaskAppTheme {
-                    NBackTaskScreen(
-                        onStartTask = { startNBackTask() },
-                        onNextTask = { nextNBackTask() },
-                        onMatchPress = { handleMatchPress() },
-                        currentNumber = null,
-                        isTaskRunning = true,
-                        showNumber = false,
-                        showAccuracy = false,
-                        accuracy = 0.0,
-                        currentTask = taskLevels[currentTaskIndex],
-                        feedbackMessage = feedbackMessage,
-                        feedbackColor = feedbackColor,
-                        showFeedback = true,
-                    )
-                }
+        delay(1000L)
+        setContent {
+            NBackTaskAppTheme {
+                NBackTaskScreen(
+                    onStartTask = { startNBackTask() },
+                    onNextTask = { nextNBackTask() },
+                    onMatchPress = { handleMatchPress() },
+                    currentNumber = null,
+                    isTaskRunning = true,
+                    showNumber = false,
+                    showAccuracy = false,
+                    accuracy = 0.0,
+                    currentTask = taskLevels[currentTaskIndex],
+                    feedbackMessage = feedbackMessage,
+                    feedbackColor = feedbackColor,
+                    showFeedback = true,
+                    onExitTask = { exitToStartScreen() }
+                )
             }
-            delay(2000L)
-            currentIndex++
-            displayNextNumber()
         }
+        delay(2000L)
+        currentIndex++
+        displayNextNumber()  // Call recursively until task finishes
     }
 
     override fun onSensorChanged(event: SensorEvent?) {
@@ -481,7 +518,8 @@ fun NBackTaskScreen(
     currentTask: Int,
     showFeedback: Boolean,
     feedbackMessage: String,
-    feedbackColor: Color
+    feedbackColor: Color,
+    onExitTask: () -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -490,6 +528,15 @@ fun NBackTaskScreen(
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End
+        ) {
+            Button(onClick = onExitTask, colors = ButtonDefaults.buttonColors(Color.Red)) {
+                Text("Exit Task")
+            }
+        }
+
         Text(
             text = "$currentTask-back task",
             style = MaterialTheme.typography.headlineMedium,
@@ -497,15 +544,7 @@ fun NBackTaskScreen(
             modifier = Modifier.padding(bottom = 16.dp)
         )
 
-        if (showFeedback) {
-            Text(
-                text = feedbackMessage,
-                style = MaterialTheme.typography.bodyLarge,
-                color = feedbackColor,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(bottom = 16.dp)
-            )
-        }
+        Spacer(modifier = Modifier.height(16.dp))
 
         if (showAccuracy) {
             Text(
@@ -526,10 +565,9 @@ fun NBackTaskScreen(
                     Text(
                         text = currentNumber.toString(),
                         style = MaterialTheme.typography.headlineLarge,
-                        modifier = Modifier.padding(bottom = 16.dp)
                     )
                 } else {
-                    Spacer(modifier = Modifier.height(72.dp)) // Placeholder for the number
+                    Spacer(modifier = Modifier.height(43.dp)) // Placeholder for the number
                 }
                 Button(
                     onClick = onMatchPress,
@@ -539,11 +577,53 @@ fun NBackTaskScreen(
                 }
             }
         }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        if (showFeedback) {
+            Text(
+                text = feedbackMessage,
+                style = MaterialTheme.typography.bodyLarge,
+                color = feedbackColor,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(vertical = 8.dp)
+            )
+        }
     }
 }
 
 @Composable
-fun TutorialScreen(onStartTutorial: () -> Unit, onSkipTutorial: () -> Unit) {
+fun CountdownScreen(
+    countdownTime: Int,
+    onCountdownFinished: () -> Unit
+) {
+    var currentCount by remember { mutableStateOf(countdownTime) }
+
+    // Launch a coroutine to count down
+    LaunchedEffect(key1 = currentCount) {
+        if (currentCount > 0) {
+            delay(1000L) // 1-second delay for each count
+            currentCount -= 1
+        } else {
+            onCountdownFinished() // Trigger when countdown finishes
+        }
+    }
+
+    // Display the countdown
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier.fillMaxSize()
+    ) {
+        Text(
+            text = currentCount.toString(),
+            style = MaterialTheme.typography.headlineLarge
+        )
+    }
+}
+
+
+@Composable
+fun TutorialScreen(onStartTutorial: () -> Unit, onSkipTutorial: () -> Unit, onExitTask: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -551,6 +631,7 @@ fun TutorialScreen(onStartTutorial: () -> Unit, onSkipTutorial: () -> Unit) {
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
+
         Text(
             text = "Welcome to the N-Back Task Tutorial",
             style = MaterialTheme.typography.headlineMedium,
@@ -594,7 +675,8 @@ fun TutorialExampleScreen(
     onCorrectAnswer: () -> Unit,
     onRestartTutorial: () -> Unit,
     onStartTask: () -> Unit,
-    onFinishTutorial: () -> Unit
+    onFinishTutorial: () -> Unit,
+    onExitTask: () -> Unit
 ) {
     val match = remember { mutableStateOf(false) }
     val incorrect = remember { mutableStateOf(false) }
@@ -606,6 +688,15 @@ fun TutorialExampleScreen(
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End
+        ) {
+            Button(onClick = onExitTask, colors = ButtonDefaults.buttonColors(Color.Red)) {
+                Text("Exit")
+            }
+        }
+
         Text(
             text = "Tutorial Example",
             color = MaterialTheme.colorScheme.inversePrimary,
@@ -624,7 +715,15 @@ fun TutorialExampleScreen(
             textAlign = TextAlign.Center,
             modifier = Modifier.padding(bottom = 16.dp)
         )
-        if (!match.value && !incorrect.value) {
+        if (index == 0 || (!match.value && !incorrect.value)) { // Show only Next on the first step
+            Button(
+                onClick = onNext,
+                modifier = Modifier.padding(top = 16.dp)
+            ) {
+                Text("Next")
+            }
+        }
+        if (!match.value && !incorrect.value && index > 0) {
             Button(
                 onClick = {
                     if (index >= tutorialNBackNumber && sequence[index] == sequence[index - tutorialNBackNumber]) {
@@ -637,12 +736,6 @@ fun TutorialExampleScreen(
                 modifier = Modifier.padding(top = 16.dp)
             ) {
                 Text("Match")
-            }
-            Button(
-                onClick = onNext,
-                modifier = Modifier.padding(top = 16.dp)
-            ) {
-                Text("Next")
             }
         }
         if (match.value) {
@@ -712,7 +805,8 @@ fun NBackTaskScreenPreview() {
             currentTask = 1,
             showFeedback = false,
             feedbackMessage = "Correct!",
-            feedbackColor = Color.Green
+            feedbackColor = Color.Green,
+            onExitTask = {}
         )
     }
 }
@@ -721,7 +815,7 @@ fun NBackTaskScreenPreview() {
 @Composable
 fun TutorialScreenPreview() {
     NBackTaskAppTheme {
-        TutorialScreen(onStartTutorial = {}, onSkipTutorial = {})
+        TutorialScreen(onStartTutorial = {}, onSkipTutorial = {}, onExitTask = {})
     }
 }
 
@@ -738,6 +832,8 @@ fun TutorialExampleScreenPreview() {
             onCorrectAnswer = {},
             onRestartTutorial = {},
             onStartTask = {},
-            onFinishTutorial = {})
+            onFinishTutorial = {},
+            onExitTask = {}
+        )
     }
 }
