@@ -28,6 +28,7 @@ import androidx.compose.ui.graphics.Color
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlinx.coroutines.*
 
 class MainActivity : ComponentActivity(), SensorEventListener {
 
@@ -226,7 +227,7 @@ class MainActivity : ComponentActivity(), SensorEventListener {
 
         try {
             uri?.let {
-                resolver.openOutputStream(it, if (existingUri == null) "wa" else "wa").use { outputStream ->
+                resolver.openOutputStream(it, if (existingUri == null) "w" else "wa").use { outputStream ->
                     if (outputStream != null) {
                         outputStream.write(accelerometerData.toString().toByteArray())
                         Log.d("NBackTaskApp", "Accelerometer data saved to ${uri.path}")
@@ -261,7 +262,7 @@ class MainActivity : ComponentActivity(), SensorEventListener {
 
         try {
             uri?.let {
-                resolver.openOutputStream(it, if (existingUri == null) "wa" else "wa").use { outputStream ->
+                resolver.openOutputStream(it, if (existingUri == null) "w" else "wa").use { outputStream ->
                     if (outputStream != null) {
                         outputStream.write(reactionTimeData.toString().toByteArray())
                         Log.d("NBackTaskApp", "Reaction time data saved to ${uri.path}")
@@ -297,7 +298,7 @@ class MainActivity : ComponentActivity(), SensorEventListener {
 
         try {
             uri?.let {
-                resolver.openOutputStream(it, if (existingUri == null) "wa" else "wa").use { outputStream ->
+                resolver.openOutputStream(it, if (existingUri == null) "w" else "wa").use { outputStream ->
                     if (outputStream != null) {
                         if (existingUri == null || fileIsEmpty(context, it)) {
                             // Write the header if the file is new or empty
@@ -403,36 +404,30 @@ class MainActivity : ComponentActivity(), SensorEventListener {
             }
         }
 
-        Thread {
-            try {
-                Thread.sleep(1000L)
-                runOnUiThread {
-                    setContent {
-                        NBackTaskAppTheme {
-                            NBackTaskScreen(
-                                onStartTask = { startNBackTask() },
-                                onNextTask = { nextNBackTask() },
-                                onMatchPress = { handleMatchPress() },
-                                currentNumber = null,
-                                isTaskRunning = true,
-                                showNumber = false,
-                                showAccuracy = false,
-                                accuracy = 0.0,
-                                currentTask = taskLevels[currentTaskIndex],
-                                feedbackMessage = feedbackMessage,
-                                feedbackColor = feedbackColor,
-                                showFeedback = true,
-                            )
-                        }
-                    }
+        CoroutineScope(Dispatchers.Main).launch {
+            delay(1000L)
+            setContent {
+                NBackTaskAppTheme {
+                    NBackTaskScreen(
+                        onStartTask = { startNBackTask() },
+                        onNextTask = { nextNBackTask() },
+                        onMatchPress = { handleMatchPress() },
+                        currentNumber = null,
+                        isTaskRunning = true,
+                        showNumber = false,
+                        showAccuracy = false,
+                        accuracy = 0.0,
+                        currentTask = taskLevels[currentTaskIndex],
+                        feedbackMessage = feedbackMessage,
+                        feedbackColor = feedbackColor,
+                        showFeedback = true,
+                    )
                 }
-                Thread.sleep(2000L)
-                currentIndex++
-                displayNextNumber()
-            } catch (e: InterruptedException) {
-                e.printStackTrace()
             }
-        }.start()
+            delay(2000L)
+            currentIndex++
+            displayNextNumber()
+        }
     }
 
     override fun onSensorChanged(event: SensorEvent?) {
