@@ -49,10 +49,14 @@ class MainActivity : ComponentActivity(), SensorEventListener {
     private var showTutorial by mutableStateOf(true)
     private var tutorialExampleRunning by mutableStateOf(false)
     private var tutorialIndex by mutableStateOf(0)
-    private val tutorialSequence = listOf(2, 1, 3, 1, 4) // Example sequence for the tutorial
-    private val tutorialNBackNumber = 2
+    private val tutorialSequences = mapOf(
+        1 to listOf(1, 2, 2, 3),  // 1-back: Match between second and third element (2)
+        2 to listOf(2, 3, 2, 4, 5),  // 2-back: Match between first and third element (2)
+        3 to listOf(3, 1, 4, 3, 2, 6)  // 3-back: Match between first and fourth element (3)
+    )
     private var feedbackMessage by mutableStateOf("")
     private var feedbackColor by mutableStateOf(Color.Green)
+    private var currentTutorialLevel by mutableStateOf(1) // Start with 1-back tutorial
 
     // Coroutine job to manage the running task
     private var taskJob: Job? = null
@@ -63,16 +67,16 @@ class MainActivity : ComponentActivity(), SensorEventListener {
                 if (showTutorial) {
                     if (tutorialExampleRunning) {
                         TutorialExampleScreen(
-                            currentNumber = tutorialSequence[tutorialIndex],
+                            currentNumber = tutorialSequences[currentTutorialLevel]?.get(tutorialIndex) ?: 0,
                             onNext = {
                                 tutorialIndex++
-                                if (tutorialIndex >= tutorialSequence.size) {
+                                if (tutorialIndex >= (tutorialSequences[currentTutorialLevel]?.size ?: 0)) {
                                     tutorialExampleRunning = false
                                     tutorialIndex = 0
                                 }
                             },
-                            tutorialNBackNumber = tutorialNBackNumber,
-                            sequence = tutorialSequence,
+                            tutorialNBackNumber = currentTutorialLevel, // Dynamically update based on the tutorial level
+                            sequence = tutorialSequences[currentTutorialLevel] ?: listOf(),
                             index = tutorialIndex,
                             onCorrectAnswer = {
                                 feedbackMessage = "Correct! You have made the right choice."
@@ -86,10 +90,25 @@ class MainActivity : ComponentActivity(), SensorEventListener {
                             onFinishTutorial = {
                                 showTutorial = false
                                 setContent {
-                                    MainScreen(onStartTask = { startNBackTask() })
+                                    MainScreen(
+                                        onStartTask = { startNBackTask() },
+                                        onRestartTutorial = {
+                                            showTutorial = true
+                                            tutorialExampleRunning = false
+                                            tutorialIndex = 0
+                                            currentTutorialLevel = 1
+                                            startupScreen()
+                                        }
+                                    )
                                 }
                             },
-                            onExitTask = { exitToStartScreen() }
+                            onExitTask = { exitToStartScreen() },
+                            currentTutorialLevel = currentTutorialLevel, // Track the current tutorial level
+                            onNextLevel = { // Move to the next tutorial level
+                                currentTutorialLevel++
+                                tutorialExampleRunning = true
+                                tutorialIndex = 0
+                            }
                         )
                     } else {
                         TutorialScreen(
@@ -104,11 +123,21 @@ class MainActivity : ComponentActivity(), SensorEventListener {
                         )
                     }
                 } else {
-                    MainScreen(onStartTask = { startNBackTask() })
+                    MainScreen(
+                        onStartTask = { startNBackTask() },
+                        onRestartTutorial = {
+                            showTutorial = true
+                            tutorialExampleRunning = false
+                            tutorialIndex = 0
+                            currentTutorialLevel = 1
+                            startupScreen()
+                        }
+                    )
                 }
             }
         }
     }
+
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -162,6 +191,7 @@ class MainActivity : ComponentActivity(), SensorEventListener {
         showTutorial = true
         tutorialExampleRunning = false
         tutorialIndex = 0
+        currentTutorialLevel = 1
         startupScreen()
     }
 
@@ -482,7 +512,7 @@ class MainActivity : ComponentActivity(), SensorEventListener {
 }
 
 @Composable
-fun MainScreen(onStartTask: () -> Unit) {
+fun MainScreen(onStartTask: () -> Unit, onRestartTutorial: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -491,7 +521,7 @@ fun MainScreen(onStartTask: () -> Unit) {
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text(
-            text = "Press Start to begin the n-back task",
+            text = "Press Start to begin the n-back task or restart the tutorial",
             style = MaterialTheme.typography.headlineMedium,
             textAlign = TextAlign.Center,
             modifier = Modifier.padding(bottom = 16.dp)
@@ -502,8 +532,16 @@ fun MainScreen(onStartTask: () -> Unit) {
         ) {
             Text("Start")
         }
+        Spacer(modifier = Modifier.height(16.dp)) // Adds space between the buttons
+        Button(
+            onClick = onRestartTutorial,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("Restart Tutorial")
+        }
     }
 }
+
 
 @Composable
 fun NBackTaskScreen(
@@ -676,10 +714,13 @@ fun TutorialExampleScreen(
     onRestartTutorial: () -> Unit,
     onStartTask: () -> Unit,
     onFinishTutorial: () -> Unit,
-    onExitTask: () -> Unit
+    onExitTask: () -> Unit,
+    currentTutorialLevel: Int, // New parameter to manage tutorial level (1-back, 2-back, 3-back)
+    onNextLevel: () -> Unit // Callback to proceed to the next tutorial level
 ) {
     val match = remember { mutableStateOf(false) }
     val incorrect = remember { mutableStateOf(false) }
+    val loopIndex = remember { mutableStateOf(index) } // Use a mutable state to control the loop index
 
     Column(
         modifier = Modifier
@@ -698,37 +739,43 @@ fun TutorialExampleScreen(
         }
 
         Text(
-            text = "Tutorial Example",
+            text = "Tutorial Example: ${currentTutorialLevel}-back",
             color = MaterialTheme.colorScheme.inversePrimary,
             style = MaterialTheme.typography.headlineMedium,
             textAlign = TextAlign.Center,
             modifier = Modifier.padding(bottom = 16.dp)
         )
         Text(
-            text = "Current Number: $currentNumber",
+            text = "Current Number: ${sequence[loopIndex.value]}",
             style = MaterialTheme.typography.headlineLarge,
             modifier = Modifier.padding(bottom = 16.dp)
         )
         Text(
-            text = "Does this number match the one from $tutorialNBackNumber steps earlier?\n If yes, then press the 'Match' button otherwise press the 'Next' button.",
+            text = "Does this number match the one from $tutorialNBackNumber steps earlier?\n If yes, press 'Match'.",
             style = MaterialTheme.typography.bodyLarge,
             textAlign = TextAlign.Center,
             modifier = Modifier.padding(bottom = 16.dp)
         )
-        if (index == 0 || (!match.value && !incorrect.value)) { // Show only Next on the first step
+
+        if (!match.value && !incorrect.value) {
             Button(
-                onClick = onNext,
+                onClick = {
+                    // If the user presses Next, increase the index or reset it to loop over the sequence
+                    loopIndex.value = (loopIndex.value + 1) % sequence.size // Loop through the sequence
+                    incorrect.value = false // Reset incorrect flag on next
+                },
                 modifier = Modifier.padding(top = 16.dp)
             ) {
                 Text("Next")
             }
         }
-        if (!match.value && !incorrect.value && index > 0) {
+        if (!match.value && !incorrect.value && loopIndex.value >= tutorialNBackNumber) {
             Button(
                 onClick = {
-                    if (index >= tutorialNBackNumber && sequence[index] == sequence[index - tutorialNBackNumber]) {
+                    // Check for match
+                    if (loopIndex.value >= tutorialNBackNumber && sequence[loopIndex.value] == sequence[loopIndex.value - tutorialNBackNumber]) {
                         match.value = true
-                        onCorrectAnswer()
+                        onCorrectAnswer() // Correct answer logic
                     } else {
                         incorrect.value = true
                     }
@@ -738,30 +785,47 @@ fun TutorialExampleScreen(
                 Text("Match")
             }
         }
+
+        // When the user finds the correct match
         if (match.value) {
             Text(
-                text = "Correct! You have made the right choice and are ready for the n-back task.",
+                text = "Correct! You've completed the ${currentTutorialLevel}-back task.",
                 style = MaterialTheme.typography.bodyLarge,
                 textAlign = TextAlign.Center,
                 color = Color.Green,
                 modifier = Modifier.padding(top = 16.dp)
             )
-            Button(
-                onClick = onFinishTutorial,
-                modifier = Modifier.padding(top = 16.dp)
-            ) {
-                Text("Finish")
-            }
-            Button(
-                onClick = onStartTask,
-                modifier = Modifier.padding(top = 16.dp)
-            ) {
-                Text("Start Task")
+            if (currentTutorialLevel < 3) {
+                Button(
+                    onClick = {
+                        match.value = false // Reset for next level
+                        loopIndex.value = 0 // Reset index for next level
+                        onNextLevel() // Proceed to the next level
+                    },
+                    modifier = Modifier.padding(top = 16.dp)
+                ) {
+                    Text("Next Level")
+                }
+            } else {
+                Button(
+                    onClick = onFinishTutorial,
+                    modifier = Modifier.padding(top = 16.dp)
+                ) {
+                    Text("Finish Tutorial")
+                }
+                Button(
+                    onClick = onStartTask,
+                    modifier = Modifier.padding(top = 16.dp)
+                ) {
+                    Text("Start Task")
+                }
             }
         }
+
+        // When the user makes an incorrect match attempt
         if (incorrect.value) {
             Text(
-                text = "Incorrect. The match was not correct.",
+                text = "Incorrect. Please try again.",
                 style = MaterialTheme.typography.bodyLarge,
                 textAlign = TextAlign.Center,
                 color = MaterialTheme.colorScheme.error,
@@ -769,13 +833,12 @@ fun TutorialExampleScreen(
             )
             Button(
                 onClick = {
-                    match.value = false
-                    incorrect.value = false
-                    onRestartTutorial()
+                    incorrect.value = false // Reset incorrect state
+                    loopIndex.value = 0 // Restart the sequence loop
                 },
                 modifier = Modifier.padding(top = 16.dp)
             ) {
-                Text("Restart Tutorial")
+                Text("Restart Level")
             }
         }
     }
@@ -785,7 +848,10 @@ fun TutorialExampleScreen(
 @Composable
 fun MainScreenPreview() {
     NBackTaskAppTheme {
-        MainScreen(onStartTask = {})
+        MainScreen(
+            onStartTask = {},
+            onRestartTutorial = {}
+        )
     }
 }
 
@@ -833,7 +899,9 @@ fun TutorialExampleScreenPreview() {
             onRestartTutorial = {},
             onStartTask = {},
             onFinishTutorial = {},
-            onExitTask = {}
+            onExitTask = {},
+            currentTutorialLevel = 1,
+            onNextLevel = {}
         )
     }
 }
