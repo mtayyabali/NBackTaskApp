@@ -208,11 +208,10 @@ class MainActivity : ComponentActivity(), SensorEventListener {
     }
 
     private fun handleMatchPress() {
-        val reactionTime = System.currentTimeMillis() - numberDisplayedTime
-        reactionTimeData.append("Reaction Time: $reactionTime ms\n")
-
         val isMatch = currentIndex >= nBackNumber && nBackSequence[currentIndex] == nBackSequence[currentIndex - nBackNumber]
         if (isMatch) {
+            val reactionTime = System.currentTimeMillis() - numberDisplayedTime
+            reactionTimeData.append("Reaction Time: $reactionTime ms\n")
             matchCount++
             feedbackMessage = "Correct! This number matches the one from $nBackNumber steps earlier."
             feedbackColor = Color.Green
@@ -241,6 +240,7 @@ class MainActivity : ComponentActivity(), SensorEventListener {
             }
         }
     }
+
 
     private fun restartNBackTask() {
         taskLevels.shuffle()
