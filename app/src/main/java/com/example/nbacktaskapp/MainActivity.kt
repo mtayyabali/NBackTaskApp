@@ -421,7 +421,7 @@ class MainActivity : ComponentActivity(), SensorEventListener {
 
         while (matchCount < requiredMatches) {
             // Generate 4 to 7 random numbers before each match
-            val randomCount = random.nextInt(4, 8)
+            val randomCount = random.nextInt(5, 8)
             for (i in 1..randomCount) {
                 targetNumbers.add(random.nextInt(10))
             }
@@ -435,7 +435,7 @@ class MainActivity : ComponentActivity(), SensorEventListener {
         }
 
         // After all matches are added, add a final set of random numbers
-        val finalRandomCount = random.nextInt(4, 8)
+        val finalRandomCount = random.nextInt(5, 8)
         for (i in 1..finalRandomCount) {
             targetNumbers.add(random.nextInt(10))
         }
@@ -472,7 +472,7 @@ class MainActivity : ComponentActivity(), SensorEventListener {
             }
         }
 
-        delay(1000L)
+        delay(500L)
         setContent {
             NBackTaskAppTheme {
                 NBackTaskScreen(
