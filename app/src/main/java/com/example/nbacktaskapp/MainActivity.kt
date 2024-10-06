@@ -228,10 +228,11 @@ class MainActivity : ComponentActivity(), SensorEventListener {
 
         // Calculate reaction time and provide feedback
         val reactionTime = System.currentTimeMillis() - numberDisplayedTime
-        reactionTimeData.append("Reaction Time: $reactionTime ms\n")
+
 
         if (isMatch) {
             matchCount++
+            reactionTimeData.append("Reaction Time: $reactionTime ms\n") // Save only correct matches
             feedbackMessage = "Correct! This number matches the one from $nBackNumber steps earlier."
             feedbackColor = Color.Green
         } else {
