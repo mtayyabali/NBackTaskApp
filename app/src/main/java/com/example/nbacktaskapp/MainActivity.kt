@@ -53,9 +53,22 @@ class MainActivity : ComponentActivity(), SensorEventListener {
         2 to listOf(2, 3, 2, 4, 5),  // 2-back: Match between first and third element (2)
         3 to listOf(3, 1, 4, 3, 2, 6)  // 3-back: Match between first and fourth element (3)
     )
+    private var isMatchButtonEnabled by mutableStateOf(true) // Control match button availability
     private var feedbackMessage by mutableStateOf("")
     private var feedbackColor by mutableStateOf(Color.Green)
     private var currentTutorialLevel by mutableStateOf(1) // Start with 1-back tutorial
+
+    // Predefined sequences for participants
+    private val predefinedSequences = listOf(
+        listOf(1, 2, 3),
+        listOf(3, 2, 1),
+        listOf(2, 3, 1),
+        listOf(1, 3, 2),
+        listOf(2, 1, 3),
+        listOf(3, 1, 2)
+    )
+    // Set participant index (should be dynamic based on the participant)
+    private val participantIndex = 0  // This can be updated based on the current participant
 
     // Coroutine job to manage the running task
     private var taskJob: Job? = null
@@ -142,9 +155,8 @@ class MainActivity : ComponentActivity(), SensorEventListener {
         super.onCreate(savedInstanceState)
         setupSensors()
 
-        // Initialize and shuffle task levels
-        taskLevels = mutableListOf(1, 2, 3)
-        taskLevels.shuffle()
+        // Use the predefined sequence for the current participant
+        taskLevels = predefinedSequences[participantIndex].toMutableList()
 
         startupScreen()
     }
@@ -178,20 +190,21 @@ class MainActivity : ComponentActivity(), SensorEventListener {
 
     private fun exitToStartScreen() {
         // Cancel the current task if it's running
-        taskJob?.cancel()
+        taskJob?.cancel() // This ensures the coroutine running the task is stopped.
         taskJob = null
 
         accelerometerData.clear()
         setupSensors()
 
-        // Initialize and shuffle task levels
-        taskLevels = mutableListOf(1, 2, 3)
-        taskLevels.shuffle()
+        // Reset taskLevels to the first predefined sequence: 1, 2, 3
+        taskLevels = predefinedSequences[0].toMutableList()
+
+        // Reset other parameters to initial state
         showTutorial = true
         tutorialExampleRunning = false
         tutorialIndex = 0
         currentTutorialLevel = 1
-        startupScreen()
+        startupScreen() // Go back to the initial screen.
     }
 
     private fun nextNBackTask() {
@@ -207,10 +220,17 @@ class MainActivity : ComponentActivity(), SensorEventListener {
     }
 
     private fun handleMatchPress() {
+        // Disable the match button to prevent multiple presses
+        isMatchButtonEnabled = false
+
+        // Check if the current number matches the one n-back positions earlier
         val isMatch = currentIndex >= nBackNumber && nBackSequence[currentIndex] == nBackSequence[currentIndex - nBackNumber]
+
+        // Calculate reaction time and provide feedback
+        val reactionTime = System.currentTimeMillis() - numberDisplayedTime
+        reactionTimeData.append("Reaction Time: $reactionTime ms\n")
+
         if (isMatch) {
-            val reactionTime = System.currentTimeMillis() - numberDisplayedTime
-            reactionTimeData.append("Reaction Time: $reactionTime ms\n")
             matchCount++
             feedbackMessage = "Correct! This number matches the one from $nBackNumber steps earlier."
             feedbackColor = Color.Green
@@ -218,7 +238,8 @@ class MainActivity : ComponentActivity(), SensorEventListener {
             feedbackMessage = "Incorrect. Try to remember the sequence better."
             feedbackColor = Color.Red
         }
-        // Refresh the UI with feedback
+
+        // Update the UI to show feedback
         setContent {
             NBackTaskAppTheme {
                 NBackTaskScreen(
@@ -234,18 +255,30 @@ class MainActivity : ComponentActivity(), SensorEventListener {
                     showAccuracy = false,
                     accuracy = 0.0,
                     currentTask = taskLevels[currentTaskIndex],
+                    isMatchButtonEnabled = isMatchButtonEnabled,
                     onExitTask = { exitToStartScreen() }
                 )
             }
         }
+
+        // Cancel the current task and show feedback
+        taskJob?.cancel()  // Cancel any existing task coroutine
+        taskJob = null
+
+        // Show feedback for 1 second, then proceed
+        CoroutineScope(Dispatchers.Main).launch {
+            delay(1000L) // Pause for 1 second to display feedback
+
+            feedbackMessage = "" // Clear feedback message
+            currentIndex++  // Proceed to the next number in the sequence
+
+            // Resume the task by displaying the next number
+            taskJob = launch {
+                displayNextNumber() // Show the next number in the sequence
+            }
+        }
     }
 
-
-    private fun restartNBackTask() {
-        taskLevels.shuffle()
-        currentTaskIndex = 0
-        startNBackTask()
-    }
 
     private fun endNBackTask() {
         sensorManager.unregisterListener(this)
@@ -275,7 +308,8 @@ class MainActivity : ComponentActivity(), SensorEventListener {
                     showAccuracy = true,
                     accuracy = accuracy,
                     currentTask = taskLevels[currentTaskIndex],
-                    onExitTask = { exitToStartScreen() }
+                    onExitTask = { exitToStartScreen() },
+                    isMatchButtonEnabled = true
                 )
             }
         }
@@ -414,35 +448,6 @@ class MainActivity : ComponentActivity(), SensorEventListener {
         return false
     }
 
-    /*private fun generateNBackSequence() {
-        val targetNumbers = mutableListOf<Int>()
-        var matchCount = 0
-        val requiredMatches = 15  // Ensure 15 matches for each n-back task
-
-        while (matchCount < requiredMatches) {
-            // Generate 4 to 7 random numbers before each match
-            val randomCount = random.nextInt(5, 8)
-            for (i in 1..randomCount) {
-                targetNumbers.add(random.nextInt(10))
-            }
-
-            // Ensure the list is long enough to insert a match
-            if (targetNumbers.size >= nBackNumber) {
-                // Add a match by repeating a number from nBackNumber positions earlier
-                targetNumbers.add(targetNumbers[targetNumbers.size - nBackNumber])
-                matchCount++
-            }
-        }
-
-        // After all matches are added, add a final set of random numbers
-        val finalRandomCount = random.nextInt(5, 8)
-        for (i in 1..finalRandomCount) {
-            targetNumbers.add(random.nextInt(10))
-        }
-
-        nBackSequence = targetNumbers
-        Log.d("NBackTaskApp", "Generated n-back sequence: $nBackSequence")
-    }*/
     private fun generateNBackSequence() {
         val targetNumbers = mutableListOf<Int>()
         var matchCount = 0
@@ -480,17 +485,17 @@ class MainActivity : ComponentActivity(), SensorEventListener {
         Log.d("NBackTaskApp", "Generated n-back sequence: $nBackSequence")
     }
 
-
-
-
-
     private suspend fun displayNextNumber() {
         if (currentIndex >= nBackSequence.size) {
             endNBackTask()
             return
         }
 
-        numberDisplayedTime = System.currentTimeMillis()  // Set the display time
+        // Set the display time for the current number
+        numberDisplayedTime = System.currentTimeMillis()
+
+        // Enable the match button when displaying the next number
+        isMatchButtonEnabled = true
 
         setContent {
             NBackTaskAppTheme {
@@ -506,20 +511,22 @@ class MainActivity : ComponentActivity(), SensorEventListener {
                     currentTask = taskLevels[currentTaskIndex],
                     feedbackMessage = feedbackMessage,
                     feedbackColor = feedbackColor,
-                    showFeedback = true,
+                    showFeedback = false, // Hide feedback while showing the next number
+                    isMatchButtonEnabled = isMatchButtonEnabled,
                     onExitTask = { exitToStartScreen() }
                 )
             }
         }
 
-        delay(500L)
+        delay(500L) // Show the current number for 500 ms
+
         setContent {
             NBackTaskAppTheme {
                 NBackTaskScreen(
                     onStartTask = { startNBackTask() },
                     onNextTask = { nextNBackTask() },
                     onMatchPress = { handleMatchPress() },
-                    currentNumber = null,
+                    currentNumber = null, // Hide the number after the delay
                     isTaskRunning = true,
                     showNumber = false,
                     showAccuracy = false,
@@ -527,14 +534,16 @@ class MainActivity : ComponentActivity(), SensorEventListener {
                     currentTask = taskLevels[currentTaskIndex],
                     feedbackMessage = feedbackMessage,
                     feedbackColor = feedbackColor,
-                    showFeedback = true,
+                    showFeedback = false,
+                    isMatchButtonEnabled = isMatchButtonEnabled,
                     onExitTask = { exitToStartScreen() }
                 )
             }
         }
-        delay(2000L)
+
+        delay(1500L) // Pause between numbers to maintain consistent timing
         currentIndex++
-        displayNextNumber()  // Call recursively until task finishes
+        displayNextNumber()  // Recursively call to display the next number
     }
 
     override fun onSensorChanged(event: SensorEvent?) {
@@ -597,17 +606,21 @@ fun NBackTaskScreen(
     showFeedback: Boolean,
     feedbackMessage: String,
     feedbackColor: Color,
+    isMatchButtonEnabled: Boolean, // New parameter to control button enable/disable
     onExitTask: () -> Unit
 ) {
     Column(
         modifier = Modifier
             .fillMaxSize()
             .padding(16.dp),
-        verticalArrangement = Arrangement.Center,
+        verticalArrangement = Arrangement.Top,  // Align elements from the top down
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
+        // Row for the Exit Task button at the top
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 16.dp),
             horizontalArrangement = Arrangement.End
         ) {
             Button(onClick = onExitTask, colors = ButtonDefaults.buttonColors(Color.Red)) {
@@ -615,6 +628,7 @@ fun NBackTaskScreen(
             }
         }
 
+        // Task text at the center
         Text(
             text = "$currentTask-back task",
             style = MaterialTheme.typography.headlineMedium,
@@ -624,6 +638,7 @@ fun NBackTaskScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
+        // Display the accuracy if the task is completed
         if (showAccuracy) {
             Text(
                 text = "Task completed. Your accuracy: ${"%.2f".format(accuracy)}%",
@@ -639,6 +654,7 @@ fun NBackTaskScreen(
             }
         } else {
             if (isTaskRunning) {
+                // Show the number if the task is running
                 if (showNumber && currentNumber != null) {
                     Text(
                         text = currentNumber.toString(),
@@ -647,9 +663,11 @@ fun NBackTaskScreen(
                 } else {
                     Spacer(modifier = Modifier.height(43.dp)) // Placeholder for the number
                 }
+                // Match button with dynamic enabled/disabled state
                 Button(
                     onClick = onMatchPress,
-                    modifier = Modifier.padding(top = 16.dp)
+                    modifier = Modifier.padding(top = 16.dp),
+                    enabled = isMatchButtonEnabled // Control the button state
                 ) {
                     Text("Match")
                 }
@@ -658,6 +676,7 @@ fun NBackTaskScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
+        // Feedback message
         if (showFeedback) {
             Text(
                 text = feedbackMessage,
@@ -912,7 +931,8 @@ fun NBackTaskScreenPreview() {
             showFeedback = false,
             feedbackMessage = "Correct!",
             feedbackColor = Color.Green,
-            onExitTask = {}
+            onExitTask = {},
+            isMatchButtonEnabled = true // Set to true to enable the button
         )
     }
 }
