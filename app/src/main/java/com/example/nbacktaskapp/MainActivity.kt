@@ -447,23 +447,26 @@ class MainActivity : ComponentActivity(), SensorEventListener {
         val targetNumbers = mutableListOf<Int>()
         var matchCount = 0
         val requiredMatches = 15  // Ensure exactly 15 matches for each n-back task
-        var lastMatchIndex = -1   // To track the index of the last match
 
         while (matchCount < requiredMatches) {
-            // Ensure exactly 5 to 8 random numbers before the next match
+            // Ensure exactly 5 to 8 distinct random numbers before the next match
             val randomCount = random.nextInt(5, 8)
 
-            // Add 5 to 8 random numbers before the match
+            // Add 5 to 8 random numbers excluding the match number
             for (i in 1..randomCount) {
-                targetNumbers.add(random.nextInt(10))
+                var randomNumber: Int
+                do {
+                    randomNumber = random.nextInt(10)
+                } while (targetNumbers.size >= nBackNumber && randomNumber == targetNumbers[targetNumbers.size - nBackNumber])
+
+                targetNumbers.add(randomNumber)
             }
 
-            // Now we ensure we have enough numbers in the list to insert the next match
+            // Ensure we have enough numbers in the list to insert a match
             if (targetNumbers.size >= nBackNumber) {
                 // Add a match by repeating a number from nBackNumber positions earlier
                 targetNumbers.add(targetNumbers[targetNumbers.size - nBackNumber])
                 matchCount++
-                lastMatchIndex = targetNumbers.size - 1  // Update the last match index
 
                 // Stop immediately if we have exactly 15 matches
                 if (matchCount == requiredMatches) {
@@ -476,6 +479,8 @@ class MainActivity : ComponentActivity(), SensorEventListener {
         nBackSequence = targetNumbers
         Log.d("NBackTaskApp", "Generated n-back sequence: $nBackSequence")
     }
+
+
 
 
 
