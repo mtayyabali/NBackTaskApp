@@ -613,7 +613,7 @@ fun NBackTaskScreen(
         modifier = Modifier
             .fillMaxSize()
             .padding(16.dp),
-        verticalArrangement = Arrangement.Top,  // Align elements from the top down
+        verticalArrangement = Arrangement.Center,  // Align elements from the top down
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         // Row for the Exit Task button at the top
