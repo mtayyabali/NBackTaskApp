@@ -170,7 +170,7 @@ class MainActivity : ComponentActivity(), SensorEventListener {
         feedbackMessage = ""
         nBackNumber = taskLevels[currentTaskIndex]
         accelerometerData.clear() // Clear previous accelerometer data
-        sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_NORMAL)
+        sensorManager.registerListener(this, accelerometer, 10000) // 10000 microseconds = 100 Hz
         generateNBackSequence()
         matchCount = 0
         currentIndex = 0
