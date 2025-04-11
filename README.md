@@ -32,18 +32,29 @@ An Android application developed for cognitive load research using the N-back ta
 
 ## 📂 Project Structure
 
+Thanks for sharing the updated project structure! Based on your screenshot, here's the **modified "Project Structure" section** in proper Markdown format for your README, reflecting the actual Kotlin structure and updated file names/locations:
+
+---
+
+### 📂 Project Structure
+
 ```
 NBackTaskApp/
-├── java/
-│   └── com.example.nbacktask/
-│       ├── MainActivity.java           # Launch screen and navigation logic
-│       ├── TaskActivity.java           # Core N-back task logic
-│       ├── RatingsActivity.java        # User ratings after each task
-│       ├── AccelerometerService.java   # Sensor data collection
-│       └── DataLogger.java             # CSV file handling and storage
-├── res/
-│   ├── layout/                         # XML UI layouts
-│   └── values/                         # Strings, colors, dimensions
+├── app/
+   └── src/
+       └── main/
+           ├── java/
+           │   └── com.example.nbacktask.ui/
+           │       ├── MainActivity.kt         # Launch screen, Core N-back task logic and navigation
+           │       └── RatingScreen.kt         # Ratings page after each task
+           ├── res/
+           │   ├── drawable/                   # App icons and images
+           │   ├── layout/                     # XML UI layouts
+           │   ├── mipmap-[dpi]/               # Launcher icons (various resolutions)
+           │   ├── values/                     # Strings, colors, dimensions
+           │   └── xml/                        # Other XML resources
+           └── AndroidManifest.xml             # App manifest file
+
 ```
 
 ---
